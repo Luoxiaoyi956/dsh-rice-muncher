@@ -239,10 +239,10 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const { content, icon } = makeRunningRow(h.document);
   h.mod.apply(h.ctx);
 
-  check("样式已注入", h.document.getElementById("dsh-rice-bowl-style") !== null);
-  const mascot = content.querySelector("[data-dsh-rice-bowl]");
+  check("样式已注入", h.document.getElementById("dsh-rice-muncher-style") !== null);
+  const mascot = content.querySelector("[data-dsh-rice-muncher]");
   check("动画挂在文字后面", mascot !== null && content.children[content.children.length - 1] === mascot);
-  check("动画带 class", mascot !== null && mascot.className === "dsh-rice-bowl");
+  check("动画带 class", mascot !== null && mascot.className === "dsh-rice-muncher");
   check("动画对读屏隐藏", mascot !== null && mascot.getAttribute("aria-hidden") === "true");
   check("没插到图标前面", content.children[0] === icon);
   check("尺寸落到了元素上", mascot !== null && mascot.style.getPropertyValue("--rb-strip") !== "");
@@ -251,8 +251,8 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   h.mod.apply(h.ctx);
   check(
     "重复 apply 不叠加",
-    content.querySelectorAll("[data-dsh-rice-bowl]").length === 1 &&
-      h.document.querySelectorAll("#dsh-rice-bowl-style").length === 1,
+    content.querySelectorAll("[data-dsh-rice-muncher]").length === 1 &&
+      h.document.querySelectorAll("#dsh-rice-muncher-style").length === 1,
   );
 
   content.children.length = 0;
@@ -262,19 +262,19 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   label2.textContent = "深度求索中，用时 4秒 ···";
   FakeMutationObserver.trigger();
   await wait(300);
-  const healed = content.querySelector("[data-dsh-rice-bowl]");
+  const healed = content.querySelector("[data-dsh-rice-muncher]");
   check("行重建后自己补回来", healed !== null && content.children[content.children.length - 1] === healed);
 
   FakeMutationObserver.instances.length = 0;
   content.children.length = 0;
   content.appendChild(h.document.createElement("span")).textContent = "深度求索中，用时 9秒 ···";
   await wait(2300);
-  check("观察者失效靠定时兜底补回来", content.querySelector("[data-dsh-rice-bowl]") !== null);
+  check("观察者失效靠定时兜底补回来", content.querySelector("[data-dsh-rice-muncher]") !== null);
 
-  const styleEl = h.document.getElementById("dsh-rice-bowl-style");
+  const styleEl = h.document.getElementById("dsh-rice-muncher-style");
   for (const dispose of h.disposers) dispose();
-  check("卸载后动画移除", h.document.querySelectorAll("[data-dsh-rice-bowl]").length === 0);
-  check("卸载后样式移除", h.document.querySelectorAll("#dsh-rice-bowl-style").length === 0);
+  check("卸载后动画移除", h.document.querySelectorAll("[data-dsh-rice-muncher]").length === 0);
+  check("卸载后样式移除", h.document.querySelectorAll("#dsh-rice-muncher-style").length === 0);
   check("样式元素确实被摘下", styleEl !== null && styleEl.parentNode === null);
 }
 

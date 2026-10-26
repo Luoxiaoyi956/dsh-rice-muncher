@@ -1,4 +1,4 @@
-# dsh-rice-bowl · 边吃边想
+# dsh-rice-muncher · 边吃边想
 
 给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）的 Web 界面挂一个小动画：
 等回复的时候，「深度求索中，用时 N 秒 ···」这一行的末尾会多出一个抱着一大碗白米饭、一勺一勺吃的小家伙。
@@ -23,7 +23,7 @@
 ## 安装
 
 ```bash
-dsh plugin --profile web add github:Luoxiaoyi956/dsh-rice-bowl
+dsh plugin --profile web add github:Luoxiaoyi956/dsh-rice-muncher
 ```
 
 装完**重启 DSH**，刷新页面。之后「设置」左侧导航会多出一项 **边吃边想**。
@@ -31,13 +31,13 @@ dsh plugin --profile web add github:Luoxiaoyi956/dsh-rice-bowl
 本地改着玩：
 
 ```bash
-dsh plugin --profile web add link:/绝对/路径/dsh-rice-bowl
+dsh plugin --profile web add link:/绝对/路径/dsh-rice-muncher
 ```
 
 卸载：
 
 ```bash
-dsh plugin --profile web remove dsh-rice-bowl
+dsh plugin --profile web remove dsh-rice-muncher
 ```
 
 ## 设置
@@ -51,7 +51,7 @@ dsh plugin --profile web remove dsh-rice-bowl
 | 节奏 | 慢 / 正常 / 快 |
 | 预览 | 就地显示当前效果 |
 
-设置存在浏览器 `localStorage`（key `dsh-rice-bowl:settings:v1`），不联网；换浏览器或清站点数据会回默认值。改完立刻生效，不用重启。
+设置存在浏览器 `localStorage`（key `dsh-rice-muncher:settings:v1`），不联网；换浏览器或清站点数据会回默认值。改完立刻生效，不用重启。
 
 ## 自己换素材
 

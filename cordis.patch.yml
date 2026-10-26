@@ -1,9 +1,9 @@
-# dsh-rice-bowl · DSH bundle patch
+# dsh-rice-muncher · DSH bundle patch
 #
 # 把插件插入 web profile 的配置树。安装：
 #   dsh plugin --profile web add link:<本目录绝对路径>
 # 或从 GitHub：
-#   dsh plugin --profile web add github:你的用户名/dsh-rice-bowl
+#   dsh plugin --profile web add github:Luoxiaoyi956/dsh-rice-muncher
 - insert:
-    - id: dsh-rice-bowl
-      name: dsh-rice-bowl
+    - id: dsh-rice-muncher
+      name: dsh-rice-muncher

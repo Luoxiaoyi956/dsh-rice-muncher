@@ -1,5 +1,5 @@
 {
-  "name": "dsh-rice-bowl",
+  "name": "dsh-rice-muncher",
   "version": "0.2.0",
   "description": "在 DSH 的「深度求索中，用时 N 秒」这一行末尾，挂一个一勺一勺吃饭的小动画；带设置页，可选动画、大小、节奏",
   "keywords": [
@@ -44,11 +44,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Luoxiaoyi956/dsh-rice-bowl.git"
+    "url": "git+https://github.com/Luoxiaoyi956/dsh-rice-muncher.git"
   },
-  "homepage": "https://github.com/Luoxiaoyi956/dsh-rice-bowl",
+  "homepage": "https://github.com/Luoxiaoyi956/dsh-rice-muncher",
   "bugs": {
-    "url": "https://github.com/Luoxiaoyi956/dsh-rice-bowl/issues"
+    "url": "https://github.com/Luoxiaoyi956/dsh-rice-muncher/issues"
   },
   "license": "MIT"
 }
