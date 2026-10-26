@@ -368,6 +368,7 @@ window.__ModuleLoader__.load({
     var inject = ["slots"];
 
     function apply(ctx) {
+      var slots = (typeof ctx.get === "function" ? ctx.get("slots") : undefined) || ctx.slots;
       if (typeof document === "undefined" || typeof window === "undefined") return;
 
       ctx.effect(function () {
@@ -375,7 +376,6 @@ window.__ModuleLoader__.load({
       }, "dsh-rice-muncher: 运行状态动画");
 
       // 设置页是可选的：拿不到 slots 或 React 就跳过，别把动画一起拖垮
-      var slots = (typeof ctx.get === "function" ? ctx.get("slots") : undefined) || ctx.slots;
       if (!slots) return;
       var React = null;
       try {
@@ -385,16 +385,17 @@ window.__ModuleLoader__.load({
       }
       if (!React || typeof React.createElement !== "function") return;
       var Panel = buildPanel(React);
-      ctx.effect(function () {
-        return slots.inject("settings.section", function () {
-          return slots.register(
-            { name: "settings.section", id: "rice-bowl", order: 36, label: "边吃边想" },
-            function () {
-              return React.createElement(Panel);
-            },
-          );
-        });
-      }, "dsh-rice-muncher: 设置页");
+      // 直接调用，不套 ctx.effect：注册的生命周期由调用方 fiber 自动接管
+      // （官方模板 templates/decoration/client.js 与 dsh-startup-secret 都是这个写法；
+      //   套一层 ctx.effect 会在 0.2.1-rc.2 上导致设置页不出现）
+      slots.inject("settings.section", function () {
+        return slots.register(
+          { name: "settings.section", id: "rice-bowl", order: 36, label: "边吃边想" },
+          function () {
+            return React.createElement(Panel);
+          },
+        );
+      });
     }
 
     exports.apply = apply;
