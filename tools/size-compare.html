@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-rice-bowl · 尺寸对比</title>
+<style>
+  :root {
+    --frames: 62;
+    --sheet: url("../assets/rice-sheet.png");
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 26px 60px;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #fff; color: #1b1b1c;
+  }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  p.note { font-size: 12.5px; color: #7f8287; margin: 0 0 22px; line-height: 1.7; }
+  .block { border-top: 1px dashed rgba(127,130,135,.4); padding: 18px 0 6px; }
+  .block:first-of-type { border-top: none; }
+  .block h2 { font-size: 12px; font-weight: 600; color: #7f8287; margin: 0 0 14px; letter-spacing: .04em; }
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; margin-bottom: 18px;
+  }
+  .row .tag {
+    width: 74px; flex: none; font-size: 11.5px; color: #a2a4a6;
+    font-variant-numeric: tabular-nums;
+  }
+  .row .icon { width: 14px; height: 14px; flex: none; border-radius: 50%; background: currentColor; opacity: .5; }
+  .row .text { color: #4176e6; font-variant-numeric: tabular-nums; }
+  .mascot {
+    flex: none; margin-left: 4px;
+    background-image: var(--sheet);
+    background-repeat: no-repeat;
+    background-position: 0 0;
+    animation-name: cycle;
+    animation-timing-function: steps(var(--frames));
+    animation-iteration-count: infinite;
+    animation-duration: 4.09s;
+  }
+  @keyframes cycle {
+    from { background-position: 0 0; }
+    to { background-position: calc(-1 * var(--sheet-w)) 0; }
+  }
+  .dark {
+    background: #1b1b1c; color: #ebeef2; padding: 18px 20px; border-radius: 10px;
+  }
+  .dark .row .text { color: #7aaaff; }
+  .dark .row .tag { color: #61666b; }
+  /* 每个尺寸：宽高 + 雪碧图缩放 + 位移量 */
+  .s32 { --size: 32; }
+  .s40 { --size: 40; }
+  .s48 { --size: 48; }
+  .s56 { --size: 56; }
+  .s64 { --size: 64; }
+  .mascot {
+    --sheet-w: calc(var(--frames) * var(--size) * 1px);
+    width: calc(var(--size) * 1px);
+    height: calc(var(--size) * 1px);
+    background-size: var(--sheet-w) calc(var(--size) * 1px);
+  }
+</style>
+</head>
+<body>
+<h1>dsh-rice-bowl · 选尺寸</h1>
+<p class="note">
+  同一个动画，摆在「深度求索中，用时 12秒 ···」后面，按不同像素大小看效果。<br>
+  现在是 <b>48px</b>。看完告诉我数字（32 / 40 / 48 / 56 / 64），我改一条命令就好。
+</p>
+
+<div class="block">
+  <h2>浅色主题</h2>
+  <div class="row"><span class="tag">32px</span><span class="icon"></span><span class="text">深度求索中，用时 12秒 ···</span><span class="mascot s32"></span></div>
+  <div class="row"><span class="tag">40px</span><span class="icon"></span><span class="text">深度求索中，用时 12秒 ···</span><span class="mascot s40"></span></div>
+  <div class="row"><span class="tag">48px（当前）</span><span class="icon"></span><span class="text">深度求索中，用时 12秒 ···</span><span class="mascot s48"></span></div>
+  <div class="row"><span class="tag">56px</span><span class="icon"></span><span class="text">深度求索中，用时 12秒 ···</span><span class="mascot s56"></span></div>
+  <div class="row"><span class="tag">64px</span><span class="icon"></span><span class="text">深度求索中，用时 12秒 ···</span><span class="mascot s64"></span></div>
+</div>
+
+<div class="block">
+  <h2>深色主题</h2>
+  <div class="dark">
+    <div class="row"><span class="tag">32px</span><span class="icon"></span><span class="text">深度求索中，用时 12秒 ···</span><span class="mascot s32"></span></div>
+    <div class="row"><span class="tag">40px</span><span class="icon"></span><span class="text">深度求索中，用时 12秒 ···</span><span class="mascot s40"></span></div>
+    <div class="row"><span class="tag">48px（当前）</span><span class="icon"></span><span class="text">深度求索中，用时 12秒 ···</span><span class="mascot s48"></span></div>
+    <div class="row"><span class="tag">56px</span><span class="icon"></span><span class="text">深度求索中，用时 12秒 ···</span><span class="mascot s56"></span></div>
+    <div class="row"><span class="tag">64px</span><span class="icon"></span><span class="text">深度求索中，用时 12秒 ···</span><span class="mascot s64"></span></div>
+  </div>
+</div>
+</body>
+</html>

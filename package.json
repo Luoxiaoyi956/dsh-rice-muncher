@@ -1,0 +1,54 @@
+{
+  "name": "dsh-rice-bowl",
+  "version": "0.2.0",
+  "description": "在 DSH 的「深度求索中，用时 N 秒」这一行末尾，挂一个一勺一勺吃饭的小动画；带设置页，可选动画、大小、节奏",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "pixel-art",
+    "widget",
+    "thinking-indicator"
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "icon": "./icon.png",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "assets/rice-sheet.png",
+    "icon.png",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.1-rc.2"
+  },
+  "scripts": {
+    "build": "node tools/build.mjs --ms 66 --render auto",
+    "test": "node tools/smoke-test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Luoxiaoyi956/dsh-rice-bowl.git"
+  },
+  "homepage": "https://github.com/Luoxiaoyi956/dsh-rice-bowl",
+  "bugs": {
+    "url": "https://github.com/Luoxiaoyi956/dsh-rice-bowl/issues"
+  },
+  "license": "MIT"
+}
