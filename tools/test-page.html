@@ -8,49 +8,36 @@
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
   body {
-    margin: 0;
+    margin: 0; padding: 32px 28px 120px;
     font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-    background: #ffffff;
-    color: #1b1b1c;
-    padding: 32px 28px 120px;
+    background: #fff; color: #1b1b1c;
   }
   body[data-theme="dark"] { background: #1b1b1c; color: #ebeef2; }
   h1 { font-size: 16px; font-weight: 600; margin: 0 0 6px; }
-  p.note { font-size: 12.5px; color: #7f8287; margin: 0 0 28px; line-height: 1.7; }
-  .stage {
-    max-width: 760px;
-    border: 1px dashed rgba(127, 130, 135, .45);
-    border-radius: 10px;
-    padding: 18px 20px;
-  }
-  /* —— 下面这一段是模仿 DSH 那个"运行中"行的结构，不是插件本身 —— */
-  .chat-flow { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
-  .bubble { align-self: flex-end; max-width: 60%; background: rgba(127,130,135,.14); border-radius: 10px; padding: 7px 11px; font-size: 13px; }
+  p.note { font-size: 12.5px; color: #7f8287; margin: 0 0 24px; line-height: 1.7; }
+  .stage { max-width: 820px; border: 1px dashed rgba(127,130,135,.45); border-radius: 10px; padding: 18px 20px; }
+  .chat { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+  .bubble { align-self: flex-end; max-width: 62%; background: rgba(127,130,135,.14); border-radius: 10px; padding: 7px 11px; }
+  .answer { max-width: 76%; line-height: 1.75; }
   .running { display: flex; align-items: center; gap: 10px; font-size: 13px; }
-  .running .vh {
-    position: absolute; width: 1px; height: 1px; overflow: hidden;
-    clip: rect(0 0 0 0); white-space: nowrap;
-  }
-  .running .divider { display: none; }
-  .running .content { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-  .running .icon {
-    width: 14px; height: 14px; flex: none; border-radius: 50%;
-    background: currentColor; opacity: .55;
-  }
+  .running .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .running .content { display: inline-flex; align-items: center; gap: 6px; }
+  .running .icon { width: 14px; height: 14px; flex: none; border-radius: 50%; background: currentColor; opacity: .55; }
   .running .text { color: #4176e6; font-variant-numeric: tabular-nums; }
   body[data-theme="dark"] .running .text { color: #7aaaff; }
-  /* —— 插件样式由 lib/client.js 自己注入 —— */
+  /* 模拟每条回答底部那行 */
+  .footer { display: flex; justify-content: flex-start; margin-top: 2px; }
+  .actions { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .mini {
+    color: #7f8287; border: 1px solid rgba(127,130,135,.3); border-radius: 999px;
+    padding: 2px 8px; font-variant-numeric: tabular-nums;
+  }
   .controls {
-    position: fixed; left: 0; right: 0; bottom: 0;
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-    padding: 12px 28px; background: rgba(127,130,135,.08);
-    backdrop-filter: blur(6px); border-top: 1px solid rgba(127,130,135,.25);
-    font-size: 12.5px;
+    position: fixed; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 12px 28px; background: rgba(127,130,135,.08); backdrop-filter: blur(6px);
+    border-top: 1px solid rgba(127,130,135,.25); font-size: 12.5px;
   }
-  button {
-    font: inherit; padding: 6px 12px; border-radius: 8px; cursor: pointer;
-    border: 1px solid rgba(127,130,135,.45); background: transparent; color: inherit;
-  }
+  button { font: inherit; padding: 6px 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(127,130,135,.45); background: transparent; color: inherit; }
   button:hover { background: rgba(127,130,135,.16); }
   #log { color: #7f8287; margin-left: auto; }
 </style>
@@ -58,86 +45,99 @@
 <body>
 <h1>dsh-rice-muncher · 本地预览</h1>
 <p class="note">
-  这一页模拟 DSH 里「思考中」那一行的结构，用来在没有 DSH 的情况下看动画的位置和大小。<br>
-  真正装上插件后，右上角那个灰色圆点就是官方的小鲸鱼尾巴，你的动画接在「用时 N 秒 ···」后面。
+  模拟 DSH 里的两个位置：思考中那一行（干饭动画），和每条回答底部那行的时间戳后面（待机动画）。<br>
+  下面几个按钮可以来回切状态，验证「同一时刻只出现一个动画」。
 </p>
 
 <div class="stage">
-  <div class="chat-flow">
+  <div class="chat">
     <div class="bubble">帮我看看这个插件可行吗？</div>
-    <div class="running" id="row">
+    <div class="answer">可以。它挂在运行状态那一行上……</div>
+    <div class="running" id="row" style="display:none">
       <span class="vh" role="status" aria-live="polite">深度求索中</span>
-      <span class="divider" aria-hidden="true"></span>
       <span class="content">
         <span class="icon" aria-hidden="true"></span>
         <span class="text" id="text">深度求索中，用时 1秒 ···</span>
       </span>
     </div>
+    <div class="footer">
+      <div data-turn-tail="1">
+        <div class="actions" data-clock="end" id="footer-actions">
+          <span class="mini">复制</span>
+          <span class="mini">好用</span>
+          <span class="mini">不好用</span>
+          <span class="mini">用量 28.3M tok</span>
+          <span class="mini">18:27</span>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
 <div class="controls">
+  <button id="start">开始思考</button>
+  <button id="stop">结束思考</button>
   <button id="theme">切换浅色 / 深色</button>
-  <button id="rerender">模拟 React 重渲染</button>
-  <button id="toggle">显示 / 隐藏这一行</button>
+  <button id="rebuild">重建底部行（测自愈）</button>
   <span id="log">等待插件挂载…</span>
 </div>
 
 <script>
-  // 1) 假装是 DSH 的模块加载器：插件脚本执行时会调用 load()
   window.__ModuleLoader__ = {
-    load(registration) { window.__riceBowlRegistration = registration; },
+    load(registration) { window.__riceMuncherRegistration = registration; },
   };
 </script>
-
 <script src="../lib/client.js"></script>
-
 <script>
-  // 2) 装上插件：模拟 DSH 客户端插件系统给出 ctx.effect
   const log = document.getElementById("log");
+  const row = document.getElementById("row");
+  const text = document.getElementById("text");
+
   const ctx = {
-    effect(fn, label) {
-      ctx.dispose = fn();
-      log.textContent = "已挂载：" + label;
-    },
+    effect(fn, label) { ctx.dispose = fn(); log.textContent = "已挂载：" + label; },
   };
-  const registration = window.__riceBowlRegistration;
+  const registration = window.__riceMuncherRegistration;
   if (!registration) {
-    log.textContent = "插件脚本没有加载成功（检查 ../lib/client.js 是否存在）";
+    log.textContent = "插件脚本没加载（检查 ../lib/client.js）";
   } else {
-    const mod = registration.factory(() => {
-      throw new Error("这个插件不该请求外部模块");
-    });
-    mod.apply(ctx);
+    registration.factory(() => { throw new Error("这个插件不该请求外部模块"); }).apply(ctx);
   }
 
-  // 3) 模拟 DSH 每秒刷新一次计时文字（真实环境下是 React 重写这个节点）
-  const text = document.getElementById("text");
-  const row = document.getElementById("row");
   let seconds = 1;
   setInterval(() => {
+    if (row.style.display === "none") return;
     seconds += 1;
     text.textContent = "深度求索中，用时 " + seconds + "秒 ···";
   }, 1000);
 
+  document.getElementById("start").onclick = () => {
+    row.style.display = "";
+    seconds = 1;
+    log.textContent = "思考中：应该只剩干饭动画";
+  };
+  document.getElementById("stop").onclick = () => {
+    row.style.display = "none";
+    log.textContent = "空闲：应该只剩待机动画（挂在时间戳后面）";
+  };
   document.getElementById("theme").onclick = () => {
-    const dark = document.body.dataset.theme === "dark";
-    document.body.dataset.theme = dark ? "light" : "dark";
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
   };
-
-  document.getElementById("rerender").onclick = () => {
-    // 最坏情况：整行内容被重建（验证插件能自己补回来）
-    const content = row.querySelector(".content");
-    content.innerHTML =
-      '<span class="icon" aria-hidden="true"></span>' +
-      '<span class="text" id="text">深度求索中，用时 ' + seconds + "秒 ···</span>";
-    log.textContent = "已重建行内容，看动画是否自己回来";
-  };
-
-  let visible = true;
-  document.getElementById("toggle").onclick = () => {
-    visible = !visible;
-    row.style.display = visible ? "" : "none";
+  document.getElementById("rebuild").onclick = () => {
+    const old = document.getElementById("footer-actions");
+    const host = old.parentNode;
+    old.remove();
+    const fresh = document.createElement("div");
+    fresh.id = "footer-actions";
+    fresh.className = "actions";
+    fresh.setAttribute("data-clock", "end");
+    for (const label of ["复制", "好用", "不好用", "用量 31.1M tok", "18:31"]) {
+      const span = document.createElement("span");
+      span.className = "mini";
+      span.textContent = label;
+      fresh.appendChild(span);
+    }
+    host.appendChild(fresh);
+    log.textContent = "底部行已重建，看待机动画会不会自己回来";
   };
 </script>
 </body>

@@ -25,6 +25,18 @@ const EVERY = Math.max(1, Number(flag("every", "2")));
 // 源自带 alpha（WebM/VP9、ProRes、APNG、带透明的 GIF 都行）时不抠图，直接用 alpha 通道
 const HAS_ALPHA = args.includes("--alpha") || flag("bpp", "3") === "4";
 const BPP = HAS_ALPHA ? 4 : 3;
+// 素材名：决定输出路径，一套动画一个名字（rice = 思考中，idle = 待机）
+const NAME = flag("name", "rice");
+const FRAMES_DIR = NAME === "rice" ? "frames" : `frames-${NAME}`;
+const SHEET_PATH = NAME === "rice" ? "assets/rice-sheet.png" : `assets/${NAME}-sheet.png`;
+// 绿幕抠完后的去绿溢出（角色身上没有绿色时安全）
+const DESPILL = args.includes("--despill");
+// 把"封闭的透明小洞"补回不透明（源分辨率下的面积阈值；0 = 关闭）
+const FILL = Math.max(0, Number(flag("fill", "0")) || 0);
+// 输出层补洞：缩到 SIZE 后，把面积 ≤ 该值（像素格数）的封闭透明块填实
+const FILL_OUT = Math.max(0, Number(flag("fill-out", "6")) || 0);
+// 绿幕"投影"清理：绿分量比蓝/红高出该值的像素直接判背景（0 = 关闭）
+const DROP_GREEN = Math.max(0, Number(flag("drop-green", "0")) || 0);
 
 const raw = readFileSync(RAW);
 const frameBytes = SRC_W * SRC_H * BPP;
@@ -120,7 +132,81 @@ function maskOf(frame) {
     }
     fg = next;
   }
+  if (FILL > 0) fg = fillSmallHoles(fg);
+  if (DROP_GREEN > 0) {
+    // 绿幕地面投影：绿通道明显压过红/蓝，但洪水填充没吃到（它和角色连在一起）
+    for (let idx = 0; idx < fg.length; idx++) {
+      if (!fg[idx]) continue;
+      const i = frame * frameBytes + idx * BPP;
+      const r = raw[i];
+      const g = raw[i + 1];
+      const b = raw[i + 2];
+      const max = r > b ? r : b;
+      if (g > max + DROP_GREEN) fg[idx] = 0;
+    }
+  }
   return fg;
+}
+
+/**
+ * 把"和画面边缘不连通、且面积不大"的透明洞补回不透明。
+ * 抠图时头发尖被吃掉、呆毛圈漏出背景，都会留下这种小洞。
+ */
+function fillSmallHoles(fg) {
+  const size = fg.length;
+  const reached = new Uint8Array(size);
+  const stack = [];
+  const push = (x, y) => {
+    if (x < 0 || y < 0 || x >= SRC_W || y >= SRC_H) return;
+    const idx = y * SRC_W + x;
+    if (reached[idx] || fg[idx]) return;
+    reached[idx] = 1;
+    stack.push(idx);
+  };
+  for (let x = 0; x < SRC_W; x++) {
+    push(x, 0);
+    push(x, SRC_H - 1);
+  }
+  for (let y = 0; y < SRC_H; y++) {
+    push(0, y);
+    push(SRC_W - 1, y);
+  }
+  while (stack.length) {
+    const idx = stack.pop();
+    const x = idx % SRC_W;
+    const y = (idx - x) / SRC_W;
+    push(x - 1, y);
+    push(x + 1, y);
+    push(x, y - 1);
+    push(x, y + 1);
+  }
+
+  const out = Uint8Array.from(fg);
+  const visited = new Uint8Array(size);
+  for (let start = 0; start < size; start++) {
+    if (out[start] || reached[start] || visited[start]) continue;
+    const region = [];
+    const local = [start];
+    visited[start] = 1;
+    while (local.length) {
+      const idx = local.pop();
+      region.push(idx);
+      if (region.length > FILL) break;
+      const x = idx % SRC_W;
+      const y = (idx - x) / SRC_W;
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= SRC_W || ny >= SRC_H) continue;
+        const nIdx = ny * SRC_W + nx;
+        if (out[nIdx] || reached[nIdx] || visited[nIdx]) continue;
+        visited[nIdx] = 1;
+        local.push(nIdx);
+      }
+    }
+    if (region.length <= FILL) for (const idx of region) out[idx] = 255;
+  }
+  return out;
 }
 
 // ---------- 3. 只处理抽到的帧，顺便求统一 bbox ----------
@@ -182,9 +268,17 @@ function renderFrame(frame, mask) {
           if (a === 0) continue;
           const w = a / 255;
           const i = frame * frameBytes + (sy * SRC_W + sx) * BPP;
-          r += raw[i] * w;
-          g += raw[i + 1] * w;
-          b += raw[i + 2] * w;
+          let pr = raw[i];
+          let pg = raw[i + 1];
+          let pb = raw[i + 2];
+          if (DESPILL) {
+            // 绿幕去溢出：绿色分量不超过红/蓝的最大值太多
+            const limit = (pr > pb ? pr : pb) + 8;
+            if (pg > limit) pg = limit;
+          }
+          r += pr * w;
+          g += pg * w;
+          b += pb * w;
           coverage += w;
         }
       }
@@ -200,9 +294,105 @@ function renderFrame(frame, mask) {
   return out;
 }
 
+/**
+ * 输出层的补洞：缩小后，源图里 1–2px 宽的缝会被平均成 alpha≈0，
+ * 在 48px 上看起来就是"身体里漏了个底"。把这种封闭的小透明块用周围颜色填实。
+ * @param rgba - SIZE×SIZE 的 RGBA
+ * @param maxArea - 允许填补的最大格数（1 格 = 1 像素）
+ */
+function fillOutputHoles(rgba, maxArea) {
+  if (maxArea <= 0) return rgba;
+  const size = SIZE * SIZE;
+  const opaque = new Uint8Array(size);
+  for (let i = 0; i < size; i++) opaque[i] = rgba[i * 4 + 3] > 8 ? 1 : 0;
+
+  const reached = new Uint8Array(size);
+  const stack = [];
+  const push = (x, y) => {
+    if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return;
+    const idx = y * SIZE + x;
+    if (reached[idx] || opaque[idx]) return;
+    reached[idx] = 1;
+    stack.push(idx);
+  };
+  for (let x = 0; x < SIZE; x++) {
+    push(x, 0);
+    push(x, SIZE - 1);
+  }
+  for (let y = 0; y < SIZE; y++) {
+    push(0, y);
+    push(SIZE - 1, y);
+  }
+  while (stack.length) {
+    const idx = stack.pop();
+    const x = idx % SIZE;
+    const y = (idx - x) / SIZE;
+    push(x - 1, y);
+    push(x + 1, y);
+    push(x, y - 1);
+    push(x, y + 1);
+  }
+
+  const visited = new Uint8Array(size);
+  for (let start = 0; start < size; start++) {
+    if (opaque[start] || reached[start] || visited[start]) continue;
+    const region = [];
+    const local = [start];
+    visited[start] = 1;
+    while (local.length) {
+      const idx = local.pop();
+      region.push(idx);
+      if (region.length > maxArea) break;
+      const x = idx % SIZE;
+      const y = (idx - x) / SIZE;
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+        const nIdx = ny * SIZE + nx;
+        if (opaque[nIdx] || reached[nIdx] || visited[nIdx]) continue;
+        visited[nIdx] = 1;
+        local.push(nIdx);
+      }
+    }
+    if (region.length > maxArea) continue;
+
+    // 用周围的实心像素平均出颜色
+    let sr = 0;
+    let sg = 0;
+    let sb = 0;
+    let count = 0;
+    for (const idx of region) {
+      const x = idx % SIZE;
+      const y = (idx - x) / SIZE;
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+          const nIdx = ny * SIZE + nx;
+          if (!opaque[nIdx]) continue;
+          sr += rgba[nIdx * 4];
+          sg += rgba[nIdx * 4 + 1];
+          sb += rgba[nIdx * 4 + 2];
+          count++;
+        }
+      }
+    }
+    if (count === 0) continue;
+    for (const idx of region) {
+      rgba[idx * 4] = Math.round(sr / count);
+      rgba[idx * 4 + 1] = Math.round(sg / count);
+      rgba[idx * 4 + 2] = Math.round(sb / count);
+      rgba[idx * 4 + 3] = 255;
+    }
+  }
+  return rgba;
+}
+
 process.stdout.write("缩放…");
 const frames = new Map();
-for (const f of picked) frames.set(f, renderFrame(f, masks.get(f)));
+for (const f of picked) frames.set(f, fillOutputHoles(renderFrame(f, masks.get(f)), FILL_OUT));
 console.log(` 完成`);
 
 // ---------- 5. 检查循环接缝 ----------
@@ -221,18 +411,18 @@ console.log(`抽帧      每 ${EVERY} 帧取一张 → ${picked.length} 帧`);
 console.log(`接缝差    ${(seam / 1e6).toFixed(2)}  (相邻帧差 ${(typical / 1e6).toFixed(2)}，越接近相邻帧越顺)`);
 
 // ---------- 6. 写逐帧 + 雪碧图 ----------
-const framesDir = join(ROOT, "frames");
+const framesDir = join(ROOT, FRAMES_DIR);
 mkdirSync(framesDir, { recursive: true });
 const sheet = Buffer.alloc(SIZE * picked.length * SIZE * 4);
 picked.forEach((f, index) => {
   const buf = frames.get(f);
-  writeFileSync(join(framesDir, `rice-${String(index).padStart(3, "0")}.png`), encodePNG(SIZE, SIZE, buf));
+  writeFileSync(join(framesDir, `${NAME}-${String(index).padStart(3, "0")}.png`), encodePNG(SIZE, SIZE, buf));
   for (let y = 0; y < SIZE; y++) {
     buf.copy(sheet, (y * SIZE * picked.length + index * SIZE) * 4, y * SIZE * 4, (y + 1) * SIZE * 4);
   }
 });
 mkdirSync(join(ROOT, "assets"), { recursive: true });
-const sheetPath = join(ROOT, "assets", "rice-sheet.png");
+const sheetPath = join(ROOT, SHEET_PATH);
 writeFileSync(sheetPath, encodePNG(SIZE * picked.length, SIZE, sheet));
 
 // ---------- 7. 预览：抽样排成网格 + 深浅底 ----------
@@ -279,8 +469,9 @@ for (let si2 = 0; si2 < sampled.length; si2++) {
     }
   }
 }
-writeFileSync(join(ROOT, "assets", `preview-${SIZE}.png`), encodePNG(previewW, previewH, preview));
+const PREVIEW_PATH = NAME === "rice" ? `preview-${SIZE}.png` : `${NAME}-preview-${SIZE}.png`;
+writeFileSync(join(ROOT, "assets", PREVIEW_PATH), encodePNG(previewW, previewH, preview));
 
-console.log(`输出      frames/ ${picked.length} 帧 ${SIZE}×${SIZE}`);
-console.log(`雪碧图    assets/rice-sheet.png  ${SIZE * picked.length}×${SIZE}`);
-console.log(`预览      assets/preview-${SIZE}.png`);
+console.log(`输出      ${FRAMES_DIR}/ ${picked.length} 帧 ${SIZE}×${SIZE}`);
+console.log(`雪碧图    ${SHEET_PATH}  ${SIZE * picked.length}×${SIZE}`);
+console.log(`预览      assets/${PREVIEW_PATH}`);

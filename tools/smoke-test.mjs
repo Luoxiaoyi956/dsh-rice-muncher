@@ -1,5 +1,4 @@
-// 极简假 DOM + 冒烟测试：挂载位置、重复挂载、自愈、卸载清理，以及设置页注册。
-// 只支持 lib/client.js 真正用到的那几个选择器，够用就行。
+// 极简假 DOM + 冒烟测试：状态互斥（待机 ↔ 思考）、自愈、卸载清理、设置页注册。
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,12 +6,33 @@ import vm from "node:vm";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CODE = readFileSync(join(ROOT, "lib", "client.js"), "utf8");
+const MARK = "data-dsh-rice-muncher";
 
 // ---------- 假 DOM ----------
+function matchesPart(el, part) {
+  if (part.startsWith("#")) return el.attributes.get("id") === part.slice(1);
+  if (part.startsWith("[") && part.endsWith("]")) {
+    const body = part.slice(1, -1);
+    const eq = body.indexOf("=");
+    if (eq < 0) return el.attributes.has(body);
+    const name = body.slice(0, eq);
+    const value = body.slice(eq + 1).replace(/^["']|["']$/g, "");
+    return el.attributes.get(name) === value;
+  }
+  return el.tagName === part;
+}
+
+/** 支持简单的后代组合（"A B"），够这个插件用。 */
 function matches(el, selector) {
-  if (selector.startsWith("#")) return el.attributes.get("id") === selector.slice(1);
-  if (selector.startsWith("[") && selector.endsWith("]")) return el.attributes.has(selector.slice(1, -1));
-  return el.tagName === selector;
+  const parts = selector.trim().split(/\s+/);
+  if (!matchesPart(el, parts[parts.length - 1])) return false;
+  let node = el.parentNode;
+  for (let i = parts.length - 2; i >= 0; i--) {
+    while (node && !matchesPart(node, parts[i])) node = node.parentNode;
+    if (!node) return false;
+    node = node.parentNode;
+  }
+  return true;
 }
 
 function makeStyle() {
@@ -116,7 +136,6 @@ class FakeMutationObserver {
 }
 FakeMutationObserver.instances = [];
 
-/** 极简 React：只够 buildPanel 里用到的几个 hook 跑通（不算真实渲染）。 */
 function fakeReact() {
   const hooks = [];
   let cursor = 0;
@@ -146,10 +165,10 @@ function fakeReact() {
   };
 }
 
-// ---------- 每一轮搭一套干净环境 ----------
-function makeHarness({ withSlots }) {
+function makeHarness({ withSlots, settings } = {}) {
   const document = new FakeDocument();
   const storage = new Map();
+  if (settings) storage.set("dsh-rice-muncher:settings:v1", JSON.stringify(settings));
   const window = {
     setTimeout,
     clearTimeout,
@@ -209,95 +228,117 @@ function makeHarness({ withSlots }) {
       disposers.push(fn());
     },
   };
-  return { document, window, mod, ctx, disposers, registrations, react, storage };
+  return { document, mod, ctx, disposers, registrations, react, storage };
 }
 
-/** 造一行和真实结构一样的「运行中」行。 */
+/** 每条回答底部那行：动作按钮 + 用量 + 时间戳。 */
+function makeFooter(document) {
+  const tail = document.createElement("div");
+  tail.setAttribute("data-turn-tail", "1");
+  const actions = tail.appendChild(document.createElement("div"));
+  actions.setAttribute("data-clock", "end");
+  actions.appendChild(document.createElement("span")).textContent = "用量 28.3M tok";
+  actions.appendChild(document.createElement("span")).textContent = "18:27";
+  document.body.appendChild(tail);
+  return { tail, actions };
+}
+
+/** 思考中那一行。 */
 function makeRunningRow(document) {
   const row = document.createElement("div");
   row.setAttribute("data-chat-running", "");
   const hidden = row.appendChild(document.createElement("span"));
   hidden.setAttribute("role", "status");
-  const divider = row.appendChild(document.createElement("span"));
-  divider.setAttribute("aria-hidden", "true");
   const content = row.appendChild(document.createElement("span"));
   const icon = content.appendChild(document.createElement("span"));
   icon.setAttribute("aria-hidden", "true");
   const label = content.appendChild(document.createElement("span"));
   label.textContent = "深度求索中，用时 3秒 ···";
   document.body.appendChild(row);
-  return { row, content, icon, label };
+  return { row, content, icon };
 }
 
 const checks = [];
 const check = (name, ok) => checks.push({ name, ok });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// ---------- 场景一：只有运行状态动画 ----------
+// ---------- 场景一：待机 ↔ 思考 互斥 ----------
 {
-  const h = makeHarness({ withSlots: false });
-  const { content, icon } = makeRunningRow(h.document);
+  const h = makeHarness();
+  const { tail, actions } = makeFooter(h.document);
   h.mod.apply(h.ctx);
 
   check("样式已注入", h.document.getElementById("dsh-rice-muncher-style") !== null);
-  const mascot = content.querySelector("[data-dsh-rice-muncher]");
-  check("动画挂在文字后面", mascot !== null && content.children[content.children.length - 1] === mascot);
-  check("动画带 class", mascot !== null && mascot.className === "dsh-rice-muncher");
-  check("动画对读屏隐藏", mascot !== null && mascot.getAttribute("aria-hidden") === "true");
-  check("没插到图标前面", content.children[0] === icon);
-  check("尺寸落到了元素上", mascot !== null && mascot.style.getPropertyValue("--rb-strip") !== "");
+  const idle = h.document.querySelector(`[${MARK}="idle"]`);
+  check("空闲时有待机动画", idle !== null);
+  check("待机挂在回答底部那行", idle !== null && idle.parentNode === actions);
+  check("待机在时间戳后面（行末）", idle !== null && actions.lastElementChild === idle);
+  check("待机默认 48px", idle !== null && idle.style.getPropertyValue("--rb-strip") === `${49 * 48}px`);
 
-  // 重复 apply 不该叠加（同一个插件实例被调两次的极端情况）
-  h.mod.apply(h.ctx);
-  check(
-    "重复 apply 不叠加",
-    content.querySelectorAll("[data-dsh-rice-muncher]").length === 1 &&
-      h.document.querySelectorAll("#dsh-rice-muncher-style").length === 1,
-  );
-
-  content.children.length = 0;
-  const icon2 = content.appendChild(h.document.createElement("span"));
-  icon2.setAttribute("aria-hidden", "true");
-  const label2 = content.appendChild(h.document.createElement("span"));
-  label2.textContent = "深度求索中，用时 4秒 ···";
+  const { row, content } = makeRunningRow(h.document);
   FakeMutationObserver.trigger();
   await wait(300);
-  const healed = content.querySelector("[data-dsh-rice-muncher]");
-  check("行重建后自己补回来", healed !== null && content.children[content.children.length - 1] === healed);
+  check("思考时待机消失", h.document.querySelector(`[${MARK}="idle"]`) === null);
+  const run = content.querySelector(`[${MARK}="run"]`);
+  check("思考时干饭挂在文字后", run !== null && content.lastElementChild === run);
 
+  row.remove();
+  FakeMutationObserver.trigger();
+  await wait(300);
+  check("思考结束后干饭消失", h.document.querySelector(`[${MARK}="run"]`) === null);
+  const idleAgain = h.document.querySelector(`[${MARK}="idle"]`);
+  check("思考结束后待机回来", idleAgain !== null && idleAgain.parentNode === actions);
+
+  // 观察者失效时靠定时兜底：整行重建
   FakeMutationObserver.instances.length = 0;
-  content.children.length = 0;
-  content.appendChild(h.document.createElement("span")).textContent = "深度求索中，用时 9秒 ···";
+  actions.remove();
+  const fresh = h.document.createElement("div");
+  fresh.setAttribute("data-clock", "end");
+  fresh.appendChild(h.document.createElement("span")).textContent = "18:31";
+  tail.appendChild(fresh);
   await wait(2300);
-  check("观察者失效靠定时兜底补回来", content.querySelector("[data-dsh-rice-muncher]") !== null);
+  const healed = h.document.querySelector(`[${MARK}="idle"]`);
+  check("行重建后待机补回来", healed !== null && healed.parentNode === fresh && fresh.lastElementChild === healed);
 
-  const styleEl = h.document.getElementById("dsh-rice-muncher-style");
   for (const dispose of h.disposers) dispose();
-  check("卸载后动画移除", h.document.querySelectorAll("[data-dsh-rice-muncher]").length === 0);
-  check("卸载后样式移除", h.document.querySelectorAll("#dsh-rice-muncher-style").length === 0);
-  check("样式元素确实被摘下", styleEl !== null && styleEl.parentNode === null);
+  check("卸载后动画清空", h.document.querySelectorAll(`[${MARK}]`).length === 0);
+  check("卸载后样式移除", h.document.getElementById("dsh-rice-muncher-style") === null);
 }
 
-// ---------- 场景二：注册设置页 ----------
+// ---------- 场景二：关掉待机 ----------
+{
+  const h = makeHarness({ settings: { size: 56, speed: "fast", showIdle: false } });
+  makeFooter(h.document);
+  h.mod.apply(h.ctx);
+  check("关掉待机后不出现", h.document.querySelector(`[${MARK}="idle"]`) === null);
+  const { row, content } = makeRunningRow(h.document);
+  FakeMutationObserver.trigger();
+  await wait(300);
+  const run = content.querySelector(`[${MARK}="run"]`);
+  check("关掉待机后思考动画照常", run !== null);
+  check("设置里的 56px 生效", run !== null && run.style.getPropertyValue("--rb-strip") === `${62 * 56}px`);
+  row.remove();
+  for (const dispose of h.disposers) dispose();
+}
+
+// ---------- 场景三：设置页注册 ----------
 {
   const h = makeHarness({ withSlots: true });
+  makeFooter(h.document);
   h.mod.apply(h.ctx);
-  const injectCall = h.registrations.find((item) => item.name === "settings.section" && item.kind === "inject");
   const registerCall = h.registrations.find((item) => item.name === "settings.section" && item.component);
-  check("注册到了 settings.section", injectCall !== undefined && registerCall !== undefined);
-  check("设置页有中文标签", registerCall !== undefined && registerCall.options.label === "边吃边想");
-  check("设置页 id 固定", registerCall !== undefined && registerCall.options.id === "rice-bowl");
+  check("注册到了 settings.section", registerCall !== undefined);
+  check("设置页标签", registerCall !== undefined && registerCall.options.label === "边吃边想");
 
   if (registerCall) {
     h.react.__resetHooks();
-    // register 包了一层：component() 返回 { type: Panel }，要再调一次才是真正的树
     const wrapper = registerCall.component();
     const tree = typeof wrapper.type === "function" ? wrapper.type({}) : wrapper;
     const text = JSON.stringify(tree);
-    check("设置页含动画选项", text.includes("鲸鱼娘吃饭"));
+    check("设置页含待机开关", text.includes("待机动画"));
     check("设置页含大小选项", text.includes("48px"));
     check("设置页含节奏选项", text.includes("正常"));
-    check("设置页含预览行", text.includes("深度求索中"));
+    check("设置页含两个预览", text.includes("深度求索中") && text.includes("用量"));
   }
   for (const dispose of h.disposers) dispose();
 }

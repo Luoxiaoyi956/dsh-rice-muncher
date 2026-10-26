@@ -1,11 +1,13 @@
 /**
  * dsh-rice-muncher · 浏览器半侧
  *
- * 1. 在「深度求索中，用时 N 秒 ···」这一行的末尾挂一个循环播放的小动画；
- * 2. 在「设置」左侧导航注册一个「边吃边想」页，可选动画 / 大小 / 节奏，改完立刻生效。
+ * 两个动画，互斥显示：
+ *   · 思考中 ——「深度求索中，用时 N 秒 ···」那一行末尾
+ *   · 待机   ——「用量」药丸后面（回复完成后、下一个问题开始前）
  *
+ * 外加「设置」左侧导航里的一页：大小 / 节奏 / 待机开关，改完立刻生效。
  * 纯 DOM + CSS，不联网、不读对话内容。设置存在浏览器 localStorage。
- * 构建时由 tools/build.mjs 替换 __XXX__ 占位符。
+ * 构建时由 tools/build.mjs 把占位符替换成素材。
  */
 window.__ModuleLoader__.load({
   id: "dsh-rice-muncher",
@@ -14,30 +16,41 @@ window.__ModuleLoader__.load({
     var module = { exports: {} };
     var exports = module.exports;
 
-    // ---------- 动画素材表（以后加新动画就往这里加一项） ----------
-    var VARIANTS = {
-      whale: {
-        label: "鲸鱼娘吃饭",
-        note: "抱着一大碗米饭，一勺一勺吃",
+    // ---------- 两套动画素材 ----------
+    var SPRITES = {
+      run: {
+        label: "思考中 · 干饭",
+        note: "一勺一勺吃白米饭",
         frames: __FRAME_COUNT__,
         sprite: "__SPRITE_BASE64__",
         size: __FRAME_SIZE__,
         ms: __FRAME_MS__,
+      },
+      idle: {
+        label: "待机 · 撑地晃脚",
+        note: "等你问下一句",
+        frames: __IDLE_FRAME_COUNT__,
+        sprite: "__IDLE_SPRITE_BASE64__",
+        size: __IDLE_FRAME_SIZE__,
+        ms: __IDLE_FRAME_MS__,
       },
     };
 
     var STORAGE_KEY = "dsh-rice-muncher:settings:v1";
     var SIZES = [32, 40, 48, 56, 64];
     var SPEEDS = [
-      { id: "slow", label: "慢", note: "0.09 秒/帧", factor: 1.35 },
-      { id: "normal", label: "正常", note: "原速", factor: 1 },
-      { id: "fast", label: "快", note: "0.05 秒/帧", factor: 0.72 },
+      { id: "slow", label: "慢", factor: 1.35 },
+      { id: "normal", label: "正常", factor: 1 },
+      { id: "fast", label: "快", factor: 0.72 },
     ];
-    var DEFAULT_SETTINGS = { variant: "whale", size: 48, speed: "normal" };
+    var DEFAULT_SETTINGS = { size: 48, speed: "normal", showIdle: true };
 
     var MARK = "data-dsh-rice-muncher";
     var STYLE_ID = "dsh-rice-muncher-style";
     var ROW_SELECTOR = "[data-chat-running]";
+    // 每条回答底部那行：复制/点赞/用量/时间戳。clock="end" 表示时间戳在右端。
+    var FOOTER_SELECTOR = '[data-turn-tail] [data-clock="end"]';
+    var CLASS = "dsh-rice-muncher";
 
     // ---------- 设置 ----------
     function defaults() {
@@ -53,11 +66,11 @@ window.__ModuleLoader__.load({
         if (!raw) return out;
         var parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== "object") return out;
-        if (typeof parsed.variant === "string" && VARIANTS[parsed.variant]) out.variant = parsed.variant;
         if (SIZES.indexOf(parsed.size) >= 0) out.size = parsed.size;
         for (var i = 0; i < SPEEDS.length; i++) if (SPEEDS[i].id === parsed.speed) out.speed = parsed.speed;
+        if (typeof parsed.showIdle === "boolean") out.showIdle = parsed.showIdle;
       } catch (error) {
-        /* 隐私模式或存储被禁：用默认值，不吵人 */
+        /* 隐私模式或存储被禁：用默认值 */
       }
       return out;
     }
@@ -66,7 +79,7 @@ window.__ModuleLoader__.load({
       try {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       } catch (error) {
-        /* 存不下就算了，本次会话内仍然生效 */
+        /* 存不下就在本次会话内生效 */
       }
     }
 
@@ -77,7 +90,7 @@ window.__ModuleLoader__.load({
         try {
           listeners[i]();
         } catch (error) {
-          /* 单个订阅者出错不该拖垮别人 */
+          /* 单个订阅者出错别拖垮别人 */
         }
       }
     }
@@ -91,34 +104,38 @@ window.__ModuleLoader__.load({
       };
     }
 
-    // ---------- 把设置落到一个动画元素上 ----------
-    function variantOf(settings) {
-      return VARIANTS[settings.variant] || VARIANTS.whale;
-    }
-
-    function frameMs(settings, variant) {
+    // ---------- 把设置落到元素上 ----------
+    function frameMs(settings, sprite) {
       for (var i = 0; i < SPEEDS.length; i++) {
-        if (SPEEDS[i].id === settings.speed) return Math.round(variant.ms * SPEEDS[i].factor);
+        if (SPEEDS[i].id === settings.speed) return Math.round(sprite.ms * SPEEDS[i].factor);
       }
-      return variant.ms;
+      return sprite.ms;
     }
 
-    function applyToNode(node, settings) {
-      var variant = variantOf(settings);
-      var strip = variant.frames * settings.size;
-      node.style.setProperty("--rb-frames", String(variant.frames));
+    function applyToNode(node, sprite, settings) {
+      var strip = sprite.frames * settings.size;
+      node.style.setProperty("--rb-frames", String(sprite.frames));
       node.style.setProperty("--rb-strip", strip + "px");
-      node.style.backgroundImage = 'url("' + variant.sprite + '")';
+      node.style.backgroundImage = 'url("' + sprite.sprite + '")';
       node.style.width = settings.size + "px";
       node.style.height = settings.size + "px";
       node.style.backgroundSize = strip + "px " + settings.size + "px";
-      node.style.animationDuration = variant.frames * frameMs(settings, variant) + "ms";
+      node.style.animationDuration = sprite.frames * frameMs(settings, sprite) + "ms";
+      node.setAttribute(MARK, sprite === SPRITES.idle ? "idle" : "run");
+    }
+
+    function createSpriteNode(sprite, settings) {
+      var node = document.createElement("span");
+      node.className = CLASS;
+      node.setAttribute("aria-hidden", "true");
+      applyToNode(node, sprite, settings);
+      return node;
     }
 
     // ---------- 样式 ----------
     function buildCss() {
       return (
-        ".dsh-rice-muncher{" +
+        "." + CLASS + "{" +
         "display:inline-block;flex:0 0 auto;margin-left:4px;vertical-align:middle;" +
         "background-repeat:no-repeat;background-position:0 0;" +
         "image-rendering:__RENDER__;pointer-events:none;user-select:none;" +
@@ -126,7 +143,7 @@ window.__ModuleLoader__.load({
         "animation-iteration-count:infinite;" +
         "}" +
         "@keyframes dsh-rice-muncher-cycle{from{background-position:0 0}to{background-position:calc(-1 * var(--rb-strip)) 0}}" +
-        "@media (prefers-reduced-motion:reduce){.dsh-rice-muncher{animation:none !important;background-position:0 0 !important}}" +
+        "@media (prefers-reduced-motion:reduce){." + CLASS + "{animation:none !important;background-position:0 0 !important}}" +
         // 设置页
         ".dsh-rb-panel{display:flex;flex-direction:column;gap:22px;max-width:640px;padding:4px 2px 28px}" +
         ".dsh-rb-panel h2{font-size:15px;font-weight:600;margin:0}" +
@@ -142,9 +159,11 @@ window.__ModuleLoader__.load({
         ".dsh-rb-opt:disabled{opacity:.45;cursor:default}" +
         ".dsh-rb-opt small{font-size:11px;color:var(--dsw-alias-label-tertiary)}" +
         ".dsh-rb-preview{display:flex;align-items:center;gap:8px;padding:16px 18px;border-radius:12px;" +
-        "background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);font-size:13px}" +
+        "background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);font-size:13px;margin-bottom:8px}" +
         ".dsh-rb-dot{width:14px;height:14px;border-radius:50%;background:var(--dsw-alias-label-deep-diving);opacity:.5;flex:none}" +
         ".dsh-rb-text{color:var(--dsw-alias-label-deep-diving);font-variant-numeric:tabular-nums}" +
+        ".dsh-rb-chip{font-size:12px;color:var(--dsw-alias-label-tertiary);border:1px solid var(--dsw-alias-border-l3);" +
+        "border-radius:999px;padding:1px 8px}" +
         ".dsh-rb-note{font-size:11.5px;color:var(--dsw-alias-label-tertiary);margin:0}"
       );
     }
@@ -159,25 +178,67 @@ window.__ModuleLoader__.load({
       return style;
     }
 
-    // ---------- 挂到「运行中」那一行 ----------
-    function mount() {
-      if (typeof document === "undefined") return;
+    // ---------- 挂载 ----------
+    function removeAll(kind) {
+      var selector = kind ? "[" + MARK + '="' + kind + '"]' : "[" + MARK + "]";
+      var nodes = document.querySelectorAll(selector);
+      for (var i = 0; i < nodes.length; i++) nodes[i].remove();
+    }
+
+    /** 思考中：塞进「运行中」那一行的文字后面。 */
+    function mountRun(settings) {
       var row = document.querySelector(ROW_SELECTOR);
-      if (!row) return;
-      if (row.querySelector("[" + MARK + "]")) return;
+      if (!row) {
+        removeAll("run");
+        return;
+      }
+      if (row.querySelector("[" + MARK + '="run"]')) return;
       var host = row.lastElementChild || row;
-      var node = document.createElement("span");
-      node.className = "dsh-rice-muncher";
-      node.setAttribute(MARK, "");
-      node.setAttribute("aria-hidden", "true");
-      applyToNode(node, readSettings());
-      host.appendChild(node);
+      host.appendChild(createSpriteNode(SPRITES.run, settings));
+    }
+
+    /** 待机：接在最新一条回答的底部那行末尾（时间戳后面）。 */
+    function mountIdle(settings) {
+      if (!settings.showIdle) {
+        removeAll("idle");
+        return;
+      }
+      var footers = document.querySelectorAll(FOOTER_SELECTOR);
+      if (footers.length === 0) {
+        removeAll("idle");
+        return;
+      }
+      // 只挂在最新那一轮上，历史上滚掉的回答不再挂
+      var target = footers[footers.length - 1];
+      var existing = document.querySelector("[" + MARK + '="idle"]');
+      if (existing) {
+        if (existing.parentNode !== target) target.appendChild(existing);
+        else if (target.lastElementChild !== existing) target.appendChild(existing);
+        return;
+      }
+      target.appendChild(createSpriteNode(SPRITES.idle, settings));
+    }
+
+    /** 两个状态互斥：思考中只显示干饭，其余时间只显示待机。 */
+    function sync() {
+      var settings = readSettings();
+      if (document.querySelector(ROW_SELECTOR)) {
+        removeAll("idle");
+        mountRun(settings);
+      } else {
+        removeAll("run");
+        mountIdle(settings);
+      }
     }
 
     function refreshMounted() {
       var settings = readSettings();
       var nodes = document.querySelectorAll("[" + MARK + "]");
-      for (var i = 0; i < nodes.length; i++) applyToNode(nodes[i], settings);
+      for (var i = 0; i < nodes.length; i++) {
+        var kind = nodes[i].getAttribute(MARK);
+        applyToNode(nodes[i], kind === "idle" ? SPRITES.idle : SPRITES.run, settings);
+      }
+      sync();
     }
 
     function startWatching() {
@@ -190,16 +251,16 @@ window.__ModuleLoader__.load({
         if (throttle !== 0) return;
         throttle = window.setTimeout(function () {
           throttle = 0;
-          mount();
+          sync();
         }, 150);
       }
 
-      mount();
+      sync();
       if (typeof MutationObserver !== "undefined") {
         observer = new MutationObserver(soon);
         observer.observe(document.documentElement, { childList: true, subtree: true });
       }
-      backstop = window.setInterval(mount, 2000);
+      backstop = window.setInterval(sync, 2000);
       var off = onChange(refreshMounted);
 
       return function stop() {
@@ -208,8 +269,7 @@ window.__ModuleLoader__.load({
         if (backstop !== null) window.clearInterval(backstop);
         if (observer !== null) observer.disconnect();
         style.remove();
-        var injected = document.querySelectorAll("[" + MARK + "]");
-        for (var i = 0; i < injected.length; i++) injected[i].remove();
+        removeAll();
       };
     }
 
@@ -217,16 +277,17 @@ window.__ModuleLoader__.load({
     function buildPanel(React) {
       var h = React.createElement;
 
-      function Mascot(props) {
+      function Sprite(props) {
         var ref = React.useRef(null);
+        var sprite = props.sprite;
         var settings = props.settings;
         React.useEffect(
           function () {
-            if (ref.current) applyToNode(ref.current, settings);
+            if (ref.current) applyToNode(ref.current, sprite, settings);
           },
-          [settings.variant, settings.size, settings.speed],
+          [settings.size, settings.speed],
         );
-        return h("span", { ref: ref, className: "dsh-rice-muncher", "aria-hidden": "true" });
+        return h("span", { ref: ref, className: CLASS, "aria-hidden": "true" });
       }
 
       return function Panel() {
@@ -252,9 +313,6 @@ window.__ModuleLoader__.load({
           emit();
         }
 
-        var variant = variantOf(settings);
-        var ids = Object.keys(VARIANTS);
-
         return h(
           "div",
           { className: "dsh-rb-panel" },
@@ -262,36 +320,38 @@ window.__ModuleLoader__.load({
           h(
             "p",
             { className: "dsh-rb-lead" },
-            "等回复的时候，在「深度求索中，用时 N 秒 ···」那一行末尾挂一个循环播放的小动画。改完立刻生效，不用重启。",
+            "两个动画，互斥显示：思考时在「深度求索中」那一行末尾干饭，回复完了在回答底部那行的时间戳后面撑地晃脚等你。改完立刻生效，不用重启。",
           ),
           h(
             "div",
             { className: "dsh-rb-sec" },
-            h("div", { className: "dsh-rb-h" }, "动画"),
+            h("div", { className: "dsh-rb-h" }, "待机动画"),
             h(
               "div",
               { className: "dsh-rb-opts" },
-              ids.map(function (id) {
-                var item = VARIANTS[id];
-                return h(
-                  "button",
-                  {
-                    key: id,
-                    className: "dsh-rb-opt",
-                    "data-on": settings.variant === id ? "" : undefined,
-                    onClick: function () {
-                      update({ variant: id });
-                    },
-                  },
-                  item.label,
-                  h("small", null, item.note),
-                );
-              }),
               h(
                 "button",
-                { className: "dsh-rb-opt", disabled: true },
-                "更多动画",
-                h("small", null, "还没做，等素材"),
+                {
+                  className: "dsh-rb-opt",
+                  "data-on": settings.showIdle ? "" : undefined,
+                  onClick: function () {
+                    update({ showIdle: true });
+                  },
+                },
+                "显示",
+                h("small", null, "回复完成后、下一个问题前"),
+              ),
+              h(
+                "button",
+                {
+                  className: "dsh-rb-opt",
+                  "data-on": settings.showIdle ? undefined : "",
+                  onClick: function () {
+                    update({ showIdle: false });
+                  },
+                },
+                "不显示",
+                h("small", null, "只在思考时出现"),
               ),
             ),
           ),
@@ -337,14 +397,17 @@ window.__ModuleLoader__.load({
                     },
                   },
                   speed.label,
-                  h("small", null, speed.note),
                 );
               }),
             ),
             h(
               "p",
               { className: "dsh-rb-note" },
-              "当前一轮 " + ((variant.frames * frameMs(settings, variant)) / 1000).toFixed(2) + " 秒",
+              "干饭一轮 " +
+                ((SPRITES.run.frames * frameMs(settings, SPRITES.run)) / 1000).toFixed(2) +
+                " 秒 · 待机一轮 " +
+                ((SPRITES.idle.frames * frameMs(settings, SPRITES.idle)) / 1000).toFixed(2) +
+                " 秒",
             ),
           ),
           h(
@@ -356,7 +419,14 @@ window.__ModuleLoader__.load({
               { className: "dsh-rb-preview" },
               h("span", { className: "dsh-rb-dot" }),
               h("span", { className: "dsh-rb-text" }, "深度求索中，用时 12秒 ···"),
-              h(Mascot, { settings: settings }),
+              h(Sprite, { sprite: SPRITES.run, settings: settings }),
+            ),
+            h(
+              "div",
+              { className: "dsh-rb-preview" },
+              h("span", { className: "dsh-rb-chip" }, "用量 12.4K"),
+              h("span", { className: "dsh-rb-chip" }, "18:27"),
+              settings.showIdle ? h(Sprite, { sprite: SPRITES.idle, settings: settings }) : null,
             ),
             h("p", { className: "dsh-rb-note" }, "设置存在这台机器的浏览器里（localStorage），不联网。"),
           ),
@@ -368,14 +438,14 @@ window.__ModuleLoader__.load({
     var inject = ["slots"];
 
     function apply(ctx) {
-      var slots = (typeof ctx.get === "function" ? ctx.get("slots") : undefined) || ctx.slots;
       if (typeof document === "undefined" || typeof window === "undefined") return;
 
       ctx.effect(function () {
         return startWatching();
-      }, "dsh-rice-muncher: 运行状态动画");
+      }, "dsh-rice-muncher: 状态动画");
 
       // 设置页是可选的：拿不到 slots 或 React 就跳过，别把动画一起拖垮
+      var slots = (typeof ctx.get === "function" ? ctx.get("slots") : undefined) || ctx.slots;
       if (!slots) return;
       var React = null;
       try {
@@ -385,17 +455,16 @@ window.__ModuleLoader__.load({
       }
       if (!React || typeof React.createElement !== "function") return;
       var Panel = buildPanel(React);
-      // 直接调用，不套 ctx.effect：注册的生命周期由调用方 fiber 自动接管
-      // （官方模板 templates/decoration/client.js 与 dsh-startup-secret 都是这个写法；
-      //   套一层 ctx.effect 会在 0.2.1-rc.2 上导致设置页不出现）
-      slots.inject("settings.section", function () {
-        return slots.register(
-          { name: "settings.section", id: "rice-bowl", order: 36, label: "边吃边想" },
-          function () {
-            return React.createElement(Panel);
-          },
-        );
-      });
+      ctx.effect(function () {
+        return slots.inject("settings.section", function () {
+          return slots.register(
+            { name: "settings.section", id: "rice-muncher", order: 36, label: "边吃边想" },
+            function () {
+              return React.createElement(Panel);
+            },
+          );
+        });
+      }, "dsh-rice-muncher: 设置页");
     }
 
     exports.apply = apply;
